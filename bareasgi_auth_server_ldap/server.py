@@ -2,7 +2,7 @@
 Server
 """
 
-import asyncio
+import argparse
 import logging
 import logging.config
 
@@ -16,26 +16,46 @@ from .config import Config
 LOGGER = logging.getLogger(__name__)
 
 
-def start_http_server(app: Application, config: Config) -> None:
+async def _start_http_server(app: Application, config: Config) -> None:
     """Start the hypercorn ASGI server"""
 
     web_config = HypercornConfig()
     web_config.bind = [f'{config.app.host}:{config.app.port}']
 
-    if config.tls.is_enabled:
-        web_config.keyfile = config.tls.keyfile
-        web_config.certfile = config.tls.certfile
+    if config.app.tls is not None and config.app.tls.is_enabled:
+        web_config.keyfile = config.app.tls.keyfile
+        web_config.certfile = config.app.tls.certfile
 
-    asyncio.run(
-        serve(
-            app,  # type: ignore
-            web_config
-        )
+    await serve(
+        app,  # type: ignore
+        web_config
     )
 
 
-def start_server() -> None:
-    config = Config()
+def _initialise_logging(config: Config) -> None:
+    if config.log is not None:
+        logging.config.dictConfig(config.log)
+
+
+def _parse_args(argv: list):
+    """Parse the command line args"""
+    parser = argparse.ArgumentParser(
+        description='Order File Service',
+        add_help=False)
+
+    parser.add_argument(
+        '--help', help='Show usage',
+        action='help')
+    parser.add_argument(
+        '-f', '--config-file', help='Path to the configuration file.',
+        action="store", dest='CONFIG_FILE')
+
+    return parser.parse_args(argv)
+
+
+async def start_server(argv: list) -> None:
+    args = _parse_args(argv[1:])
+    config = Config.load(args.CONFIG_FILE)
     app = make_application(config)
-    start_http_server(app, config)
+    await _start_http_server(app, config)
     logging.shutdown()

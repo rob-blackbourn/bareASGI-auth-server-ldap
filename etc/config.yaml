@@ -1,0 +1,46 @@
+app:
+  host: ${APP_HOST}
+  port: ${APP_PORT}
+  tls:
+    is_enabled: ${APP_TLS_IS_ENABLED}
+    certfile: ${APP_TLS_CERTFILE}
+    keyfile: ${APP_TLS_KEYFILE}
+  path_prefix: ${APP_PATH_PREFIX}
+
+cookie:
+  name: ${COOKIE_NAME}
+  domain: ${COOKIE_DOMAIN}
+  path: ${COOKIE_PATH}
+  expiry: ${COOKIE_EXPIRY}
+
+jwt:
+  secret: ${JWT_SECRET}
+  issuer: ${JWT_ISSUER}
+  expiry: ${JWT_EXPIRY}
+
+ldap:
+  url: ${LDAP_URL}
+  base: ${LDAP_BASE}
+  username: ${LDAP_USERNAME}
+  password: ${LDAP_PASSWORD}
+
+logging:
+  version: 1
+  formatters:
+    simple:
+      format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: simple
+      stream: ext://sys.stdout
+  loggers:
+    bareasgi_auth_server:
+      level: ${LOG_LEVEL}
+      handlers:
+        - console
+      propagate: false
+  root:
+    level: ${LOG_ROOT_LEVEL}
+    handlers:
+      - console

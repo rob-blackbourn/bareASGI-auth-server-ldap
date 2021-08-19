@@ -1,68 +1,192 @@
 """Configuration"""
 
-import os
-from typing import Optional
+from __future__ import annotations
+
+from datetime import timedelta
+import io
+from os.path import expanduser, expandvars
+from typing import Any, Dict, Optional, TextIO, Union
+
+import yaml
 
 from .utils import parse_duration
 
 
 def _expand_path(path: Optional[str]) -> Optional[str]:
-    return None if path is None else os.path.expanduser(path)
+    return None if path is None else expanduser(path)
 
 
-class AppConfig:
+def _expandobjvars(obj: Any) -> Any:
+    if isinstance(obj, str):
+        return expandvars(obj)
 
-    def __init__(self) -> None:
-        self.host = os.environ['APP_HOST']
-        self.port = os.environ['APP_PORT']
-        self.path_prefix = os.environ['APP_PATH_PREFIX']
+    if isinstance(obj, list):
+        return [
+            _expandobjvars(item)
+            for item in obj
+        ]
+
+    if isinstance(obj, dict):
+        return {
+            key: _expandobjvars(value)
+            for key, value in obj.items()
+        }
+
+    return obj
+
+
+def _load_yaml(filename: str) -> Dict[str, Any]:
+    with open(filename, 'rt') as file_ptr:
+        return yaml.load(file_ptr, Loader=yaml.FullLoader)
 
 
 class TlsConfig:
 
-    def __init__(self) -> None:
-        self.is_enabled = os.environ['APP_TLS_IS_ENABLED'].lower() in (
-            'true', 'yes')
-        self.certfile = _expand_path(os.environ.get('APP_TLS_CERTFILE'))
-        self.keyfile = _expand_path(os.environ.get('APP_TLS_KEYFILE'))
+    def __init__(
+            self,
+            is_enabled: bool,
+            certfile: Optional[str],
+            keyfile: Optional[str]
+    ) -> None:
+        self.is_enabled = is_enabled
+        self.certfile = certfile
+        self.keyfile = keyfile
+
+    @classmethod
+    def create(cls, dct: Dict[str, Any]) -> TlsConfig:
+        return TlsConfig(
+            dct['is_enabled'] == 'true',
+            dct.get('certfile'),
+            dct.get('keyfile')
+        )
+
+
+class AppConfig:
+
+    def __init__(
+            self,
+            host: str,
+            port: int,
+            tls: Optional[TlsConfig],
+            path_prefix: str
+    ) -> None:
+        self.host = host
+        self.port = port
+        self.tls = tls
+        self.path_prefix = path_prefix
+
+    @classmethod
+    def create(cls, dct: Dict[str, Any]) -> AppConfig:
+        return AppConfig(
+            dct['host'],
+            int(dct['port']),
+            TlsConfig.create(dct['tls']) if 'tls' in dct else None,
+            dct['path_prefix']
+        )
 
 
 class CookieConfig:
 
-    def __init__(self) -> None:
-        self.name = os.environ['COOKIE_NAME']
-        self.domain = os.environ['COOKIE_DOMAIN']
-        self.path = os.environ['COOKIE_PATH']
+    def __init__(
+            self,
+            name: str,
+            domain: str,
+            path: str,
+            expiry: timedelta,
+    ) -> None:
+        self.name = name
+        self.domain = domain
+        self.path = path
+        self.expiry = expiry
 
-
-class TokenConfig:
-
-    def __init__(self) -> None:
-        self.secret = os.environ['TOKEN_SECRET']
-        self.issuer = os.environ['TOKEN_ISSUER']
-        self.lease_expiry = parse_duration(
-            os.environ['TOKEN_LEASE_EXPIRY']
+    @classmethod
+    def create(cls, dct: Dict[str, Any]) -> CookieConfig:
+        return CookieConfig(
+            dct['name'],
+            dct['domain'],
+            dct['path'],
+            parse_duration(dct['expiry'])
         )
-        self.session_expiry = parse_duration(
-            os.environ['TOKEN_SESSION_EXPIRY']
+
+
+class JwtConfig:
+
+    def __init__(
+            self,
+            secret: str,
+            issuer: str,
+            expiry: timedelta
+    ) -> None:
+        self.secret = secret
+        self.issuer = issuer
+        self.expiry = expiry
+
+    @classmethod
+    def create(cls, dct: Dict[str, Any]) -> JwtConfig:
+        return JwtConfig(
+            dct['secret'],
+            dct['issuer'],
+            parse_duration(dct['expiry'])
         )
-        self.renewal_path = os.environ['TOKEN_RENEWAL_PATH']
 
 
 class LdapConfig:
 
-    def __init__(self) -> None:
-        self.url = os.environ['LDAP_URL']
-        self.base = os.environ['LDAP_BASE']
-        self.username = os.environ['LDAP_USERNAME']
-        self.password = os.environ['LDAP_PASSWORD']
+    def __init__(
+            self,
+            url: str,
+            base: str,
+            username: str,
+            password: str
+    ) -> None:
+        self.url = url
+        self.base = base
+        self.username = username
+        self.password = password
+
+    @classmethod
+    def create(cls, dct: Dict[str, Any]) -> LdapConfig:
+        return LdapConfig(
+            dct['url'],
+            dct['base'],
+            dct['username'],
+            dct['password']
+        )
 
 
 class Config:
 
-    def __init__(self) -> None:
-        self.app = AppConfig()
-        self.tls = TlsConfig()
-        self.cookie = CookieConfig()
-        self.token = TokenConfig()
-        self.ldap = LdapConfig()
+    def __init__(
+            self,
+            app: AppConfig,
+            cookie: CookieConfig,
+            jwt: JwtConfig,
+            ldap: LdapConfig,
+            log: Optional[Dict[str, Any]]
+    ) -> None:
+        self.app = app
+        self.cookie = cookie
+        self.jwt = jwt
+        self.ldap = ldap
+        self.log = log
+
+    @classmethod
+    def create(cls, dct: Dict[str, Any]) -> Config:
+        return Config(
+            AppConfig.create(dct['app']),
+            CookieConfig.create(dct['cookie']),
+            JwtConfig.create(dct['jwt']),
+            LdapConfig.create(dct['ldap']),
+            dct.get('log')
+        )
+
+    @classmethod
+    def load(cls, fp: Union[str, TextIO]) -> Config:
+        if isinstance(fp, str):
+            with open(fp, 'rt') as file_ptr:
+                return cls.load(file_ptr)
+        elif isinstance(fp, io.TextIOBase):
+            dct = yaml.load(fp, Loader=yaml.FullLoader)
+            return cls.create(_expandobjvars(dct))
+        else:
+            raise ValueError("Expected a file like object")

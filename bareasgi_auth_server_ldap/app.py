@@ -23,16 +23,16 @@ def make_application(config: Config) -> Application:
         config.ldap.base
     )
     token_manager = TokenManager(
-        config.token.secret,
-        config.token.lease_expiry,
-        config.token.issuer,
+        config.jwt.secret,
+        config.cookie.expiry,
+        config.jwt.issuer,
         config.cookie.name,
         config.cookie.domain,
         config.cookie.path,
-        config.token.session_expiry
+        config.jwt.expiry
     )
 
-    token_renewal_path = config.app.path_prefix + config.token.renewal_path
+    token_renewal_path = config.app.path_prefix + '/renew_token'
     authenticator = JwtAuthenticator(token_renewal_path, token_manager)
 
     auth_controller = AuthController(
