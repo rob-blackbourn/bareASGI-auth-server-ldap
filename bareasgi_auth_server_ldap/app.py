@@ -4,7 +4,6 @@ Application
 
 from bareasgi import Application
 from bareasgi_cors import CORSMiddleware
-from bareasgi_auth_common import JwtAuthenticator
 from bareasgi_auth_common import TokenManager
 from bareasgi_auth_server.auth_controller import AuthController
 from .ldap_auth_service import LdapAuthService
@@ -32,12 +31,9 @@ def make_application(config: Config) -> Application:
         config.jwt.expiry
     )
 
-    token_renewal_path = config.app.path_prefix + '/renew_token'
-    authenticator = JwtAuthenticator(token_renewal_path, token_manager)
-
     auth_controller = AuthController(
         config.app.path_prefix,
-        authenticator,
+        token_manager,
         auth_service,
     )
 
