@@ -35,7 +35,7 @@ logging:
       formatter: simple
       stream: ext://sys.stdout
   loggers:
-    bareasgi_auth_server:
+    bareasgi_auth_server_ldap:
       level: ${LOG_LEVEL}
       handlers:
         - console

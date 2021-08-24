@@ -2,7 +2,7 @@
 LDAP Authentication Service
 """
 
-from typing import AbstractSet, Any, List, Mapping, Optional, Set
+from typing import AbstractSet, Any, List, Optional, Set
 
 import bonsai
 
@@ -36,12 +36,8 @@ class LdapAuthService(AuthService):
         self.password = password
         self.base = base
 
-    async def authorizations(self, user_id: str) -> Mapping[str, Any]:
-        groups = await self.ldap_groups_by_sam_account_name(user_id)
-
-        return {
-            'roles': groups
-        }
+    async def authorizations(self, user: str) -> AbstractSet[str]:
+        return await self.ldap_groups_by_sam_account_name(user)
 
     async def authenticate(self, **credentials) -> Optional[str]:
         username = credentials['username']
@@ -63,7 +59,7 @@ class LdapAuthService(AuthService):
 
         return None
 
-    async def is_valid_user(self, user_id: str) -> bool:
+    async def is_valid_user(self, user: str) -> bool:
         if self.username is None or self.password is None:
             return True
 
@@ -77,7 +73,7 @@ class LdapAuthService(AuthService):
             results = await connection.search(
                 self.base,
                 bonsai.LDAPSearchScope.SUBTREE,
-                f'(&(userAccountControl:1.2.840.113556.1.4.803:=2)(userPrincipalName={user_id}))',
+                f'(&(userAccountControl:1.2.840.113556.1.4.803:=2)(userPrincipalName={user}))',
                 ['userPrincipalName']
             )
             return len(results) == 0
@@ -100,9 +96,9 @@ class LdapAuthService(AuthService):
             users = {entry['userPrincipalName'][0] for entry in results}
             return users
 
-    async def _ldap_groups(self, user_attr: str, user_value: Any) -> List[str]:
+    async def _ldap_groups(self, user_attr: str, user_value: Any) -> AbstractSet[str]:
         if self.username is None or self.password is None:
-            return []
+            return set()
 
         client = bonsai.LDAPClient(self.url)
         client.set_credentials(
@@ -136,12 +132,12 @@ class LdapAuthService(AuthService):
                     )
                     if cn is not None:
                         groups.add(cn)
-            return list(groups)
+            return groups
 
-    async def ldap_groups_by_user_principal_name(self, user: str) -> List[str]:
+    async def ldap_groups_by_user_principal_name(self, user: str) -> AbstractSet[str]:
         """Get the groups for a user by user principal name"""
         return await self._ldap_groups('userPrincipalName', user)
 
-    async def ldap_groups_by_sam_account_name(self, user: str) -> List[str]:
+    async def ldap_groups_by_sam_account_name(self, user: str) -> AbstractSet[str]:
         """Get the groups for a user by sam  principal name"""
         return await self._ldap_groups('sAMAccountName', user)

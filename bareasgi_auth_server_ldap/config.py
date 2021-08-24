@@ -35,11 +35,6 @@ def _expandobjvars(obj: Any) -> Any:
     return obj
 
 
-def _load_yaml(filename: str) -> Dict[str, Any]:
-    with open(filename, 'rt') as file_ptr:
-        return yaml.load(file_ptr, Loader=yaml.FullLoader)
-
-
 class TlsConfig:
 
     def __init__(
