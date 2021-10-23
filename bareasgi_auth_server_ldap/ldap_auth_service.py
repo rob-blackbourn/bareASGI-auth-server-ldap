@@ -6,7 +6,12 @@ from typing import AbstractSet, Any, List, Optional, Set
 
 import bonsai
 
-from bareasgi_auth_server import AuthService
+from bareasgi_auth_server import (
+    AuthService,
+    UserNotFoundError,
+    UserCredentialsError,
+    UserInvalidError
+)
 
 
 class LdapAuthService(AuthService):
@@ -36,10 +41,10 @@ class LdapAuthService(AuthService):
         self.password = password
         self.base = base
 
-    async def authorizations(self, user: str) -> AbstractSet[str]:
-        return await self.ldap_groups_by_sam_account_name(user)
+    async def authorizations(self, user_id: str) -> List[str]:
+        return await self.ldap_groups_by_sam_account_name(user_id)
 
-    async def authenticate(self, **credentials) -> Optional[str]:
+    async def authenticate(self, **credentials) -> str:
         username = credentials['username']
         password = credentials['password']
 
@@ -51,15 +56,17 @@ class LdapAuthService(AuthService):
                 password=password
             )
             async with client.connect(is_async=True):
-                if await self.is_valid_user(username):
-                    return username
+                if not await self.is_valid_user(username):
+                    raise UserInvalidError(f'User {username} is invalid')
 
-        except:  # pylint: disable=bare-except
-            pass
+            return username
 
-        return None
+        except Exception as error:  # pylint: disable=bare-except
+            raise UserCredentialsError(
+                f'Failed to authenticate {username}'
+            ) from error
 
-    async def is_valid_user(self, user: str) -> bool:
+    async def is_valid_user(self, user_id: str) -> bool:
         if self.username is None or self.password is None:
             return True
 
@@ -73,7 +80,7 @@ class LdapAuthService(AuthService):
             results = await connection.search(
                 self.base,
                 bonsai.LDAPSearchScope.SUBTREE,
-                f'(&(userAccountControl:1.2.840.113556.1.4.803:=2)(userPrincipalName={user}))',
+                f'(&(userAccountControl:1.2.840.113556.1.4.803:=2)(userPrincipalName={user_id}))',
                 ['userPrincipalName']
             )
             return len(results) == 0
@@ -96,9 +103,9 @@ class LdapAuthService(AuthService):
             users = {entry['userPrincipalName'][0] for entry in results}
             return users
 
-    async def _ldap_groups(self, user_attr: str, user_value: Any) -> AbstractSet[str]:
+    async def _ldap_groups(self, user_attr: str, user_value: Any) -> List[str]:
         if self.username is None or self.password is None:
-            return set()
+            return []
 
         client = bonsai.LDAPClient(self.url)
         client.set_credentials(
@@ -117,7 +124,7 @@ class LdapAuthService(AuthService):
                 entry['memberOf']
                 for entry in results if len(entry['memberOf']) > 0
             ]
-            groups: Set[str] = set()
+            groups: List[str] = []
             for items in members:
                 for item in items:
                     _, cn = next(
@@ -131,13 +138,13 @@ class LdapAuthService(AuthService):
                         [None, None]
                     )
                     if cn is not None:
-                        groups.add(cn)
+                        groups.append(cn)
             return groups
 
-    async def ldap_groups_by_user_principal_name(self, user: str) -> AbstractSet[str]:
+    async def ldap_groups_by_user_principal_name(self, user_id: str) -> List[str]:
         """Get the groups for a user by user principal name"""
-        return await self._ldap_groups('userPrincipalName', user)
+        return await self._ldap_groups('userPrincipalName', user_id)
 
-    async def ldap_groups_by_sam_account_name(self, user: str) -> AbstractSet[str]:
+    async def ldap_groups_by_sam_account_name(self, user_id: str) -> List[str]:
         """Get the groups for a user by sam  principal name"""
-        return await self._ldap_groups('sAMAccountName', user)
+        return await self._ldap_groups('sAMAccountName', user_id)
